@@ -7,7 +7,14 @@ import tempfile
 from enum import Enum
 from pathlib import Path
 
-import docker
+# HF Spaces compatible import
+try:
+    import docker
+    DOCKER_AVAILABLE = True
+except ImportError:
+    # Fallback when docker is not available
+    docker = None
+    DOCKER_AVAILABLE = False
 from dirhash import dirhash
 from jinja2 import Environment, FileSystemLoader
 
@@ -402,9 +409,16 @@ if __name__ == '__main__':
         with tempfile.TemporaryDirectory() as temp_dir:
             # dry_run is true so we only prepare a temp_dir containing the required source code and the Dockerfile. We
             # then obtain the MD5 hash of the folder and return <image_repo>:<temp_dir_md5_hash>
+            # HF Spaces compatible docker client
+            if DOCKER_AVAILABLE:
+                docker_client = docker.from_env()
+                runtime_builder = DockerRuntimeBuilder(docker_client)
+            else:
+                raise AgentRuntimeBuildError("Docker is not available. Cannot build runtime image in HF Spaces environment.")
+            
             runtime_image_hash_name = build_runtime_image(
                 args.base_image,
-                runtime_builder=DockerRuntimeBuilder(docker.from_env()),
+                runtime_builder=runtime_builder,
                 build_folder=temp_dir,
                 dry_run=True,
                 force_rebuild=args.force_rebuild,
@@ -442,7 +456,14 @@ if __name__ == '__main__':
         # If a build_folder is not provided, after copying the required source code and dynamically creating the
         # Dockerfile, we actually build the Docker image
         logger.debug('Building image in a temporary folder')
-        docker_builder = DockerRuntimeBuilder(docker.from_env())
+        
+        # HF Spaces compatible docker client
+        if DOCKER_AVAILABLE:
+            docker_client = docker.from_env()
+            docker_builder = DockerRuntimeBuilder(docker_client)
+        else:
+            raise AgentRuntimeBuildError("Docker is not available. Cannot build runtime image in HF Spaces environment.")
+        
         image_name = build_runtime_image(
             args.base_image, docker_builder, platform=args.platform
         )
